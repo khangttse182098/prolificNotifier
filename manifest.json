@@ -1,0 +1,26 @@
+{
+   "action": {
+      "default_popup": "popup/popup.html",
+      "title": "Prolific get studies automatically"
+   },
+   "background": {
+      "service_worker": "dist/background.js"
+   },
+   "content_scripts": [ {
+      "js": [ "dist/content.js" ],
+      "matches": [ "https://app.prolific.com/*" ]
+   } ],
+   "description": "Google extension for Prolific to notify you when studies are available",
+   "host_permissions": [ "https://app.prolific.com/*" ],
+   "icons": {
+      "128": "imgs/logo.png",
+      "16": "imgs/logo.png",
+      "48": "imgs/logo.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoNWv896DgfYM7sFXKzVpbp0jH2SFRex/wfm1kvm4ZGrrCpX3segcDSKeRd1KqSETNjAjfDJSdkngyaV90hSGGMrwwbKzS/ojs7QyVv6nc/rQV8NE2EsnXAR2csJF4hSraCxLC9wgZERPylMr/rvdwcPeasO9IJSjuSBe8B9zcCfxUHOJ1sY5wLm5pZNtuqe7qbPOlPU0KsM/KCqbYr/XXH7gqbFSXBPseMGu3+hZ87ewPqZFsM8Wp6twpxshAppjZqxQyyUMcVuTUoqk9i+Kpd1Wr6FDgYo6ycnXgMeVY9r5g2EKe3GiaDxTIe5kJ48yg+kz4WnoOoVsg66dxU5EzQIDAQAB",
+   "manifest_version": 3,
+   "name": "Prolific Studies Notifier",
+   "permissions": [ "storage", "notifications", "offscreen", "tabs" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "3.5.0"
+}
