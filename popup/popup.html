@@ -68,6 +68,21 @@
         </div>
 
         <div class="form-check d-flex justify-content-center ml-1 my-2">
+            <input class="form-check-input mr-2" type="checkbox" value="" id="ntfyActive">
+            <label class="form-check-label" for="ntfyActive">
+                Forward notifications to ntfy
+            </label>
+            <span class="tooltip-icon" data-tooltip="Also sends each new-study notification to https://ntfy.sh/&lt;topic&gt; so you can receive it on other devices">ℹ</span>
+        </div>
+
+        <div class="form-number d-flex justify-content-center">
+            <input class="mr-2 blacklist-input" type="text" id="ntfyTopic" placeholder="my-secret-topic" maxlength="64">
+            <label class="form-check-label" for="ntfyTopic" id="ntfyTopic-label">
+                ntfy topic
+            </label>
+        </div>
+
+        <div class="form-check d-flex justify-content-center ml-1 my-2">
             <input class="form-check-input mr-2" type="checkbox" value="" id="trackIds">
             <label class="form-check-label" for="trackIds" id="trackIdsLabel">
                 Show each study only once
@@ -143,13 +158,13 @@
         <div class="form-number d-flex justify-content-center">
             <input class="mr-2" type="number" value="0.0" id="reward" min='0'>
             <label class="form-check-label" for="reward">
-                Reward (£)
+                Reward ($)
             </label>
         </div>
         <div class="form-number d-flex justify-content-center">
             <input class="mr-2" type="number" value="0.0" id="rewardPerHour" min="0">
             <label class="form-check-label" for="rewardPerHour">
-                Reward per hour (£/h)
+                Reward per hour ($/h)
             </label>
         </div>
         <div class="form-number d-flex justify-content-center">
@@ -178,6 +193,21 @@
         </div>
         <div id="researcher-list"></div>
         <button id="submit-blacklist" class="btn btn-success ml-05">
+            Add
+        </button>
+
+        <div class="flex mt-2">
+            <div class="filters-title mb-2">Only show studies from researchers:</div>
+            <span class="tooltip-icon" data-tooltip="When this list is not empty, only studies whose researcher (the 'By ...' part) contains one of these names are shown and notified. Leave empty to allow everyone. Not case sensitive">ℹ</span>
+        </div>
+        <div class="form-number d-flex justify-content-center">
+            <input class="mr-2 blacklist-input" type="text" id="whitelist-researcher">
+            <label class="form-check-label" for="whitelist-researcher">
+                Researcher
+            </label>
+        </div>
+        <div id="researcher-whitelist"></div>
+        <button id="submit-whitelist" class="btn btn-success ml-05">
             Add
         </button>
     </div>

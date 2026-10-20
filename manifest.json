@@ -11,7 +11,7 @@
       "matches": [ "https://app.prolific.com/*" ]
    } ],
    "description": "Google extension for Prolific to notify you when studies are available",
-   "host_permissions": [ "https://app.prolific.com/*" ],
+   "host_permissions": [ "https://app.prolific.com/*", "https://ntfy.sh/*" ],
    "icons": {
       "128": "imgs/logo.png",
       "16": "imgs/logo.png",

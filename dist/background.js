@@ -28,6 +28,11 @@ const STUDY_HISTORY_LEN = "studyHistoryLen";
 const SORT_STUDIES = 'sortStudies';
 const REFRESH_RATE = 'refreshRate';
 const CURRENT_STUDIES = 'currentStudies';
+const NTFY_ACTIVE = "ntfyActive";
+const NTFY_TOPIC = "ntfyTopic";
+const NTFY_BASE_URL = "https://ntfy.sh/";
+const NTFY_DEFAULT_TITLE = "Prolific";
+const NTFY_TOPIC_PATTERN = /^[-_A-Za-z0-9]{1,64}$/;
 let creating = null; // A global promise to avoid concurrency issues
 initialize();
 chrome.runtime.onMessage.addListener(handleMessages);
@@ -151,6 +156,8 @@ function handleMessages(message) {
             case 'play-sound':
                 yield handlePlaySound();
                 sendNotification();
+                // Popup "Test" button: also send a test message to ntfy so the phone path can be checked.
+                void sendNtfyMessage(NTFY_DEFAULT_TITLE, "Test notification from Prolific Studies Notifier.\nIf you can read this, ntfy forwarding works.", "https://app.prolific.com/");
                 break;
             case 'show-notification':
                 sendNotification();
@@ -249,10 +256,13 @@ function setInitialValues() {
             [STUDY_HISTORY_LEN]: 100,
             [SORT_STUDIES]: "created+",
             [REFRESH_RATE]: 0,
+            [NTFY_ACTIVE]: false,
+            [NTFY_TOPIC]: "",
             "reward": 0,
             "rewardPerHour": 0,
             "time": 0,
             "researcherBlacklist": [],
+            "researcherWhitelist": [],
             "nameBlacklist": []
         });
     });
@@ -265,17 +275,24 @@ function sendNotification(study = null) {
         if (study.id) {
             id = study.id;
         }
-        if (study.title && study.researcher) {
-            title = `${study.title}\nBy ${study.researcher}`;
+        if (study.title) {
+            title = study.title;
         }
+        const details = [];
         if (study.reward) {
-            message += `\nReward: ${study.reward}`;
+            details.push(`Reward: ${study.reward}`);
         }
         if (study.rewardPerHour) {
-            message += `\nReward per hour: ${study.rewardPerHour}`;
+            details.push(`Reward per hour: ${study.rewardPerHour}`);
         }
         if (study.time) {
-            message += `\nTime: ${study.time}`;
+            details.push(`Time: ${study.time}`);
+        }
+        if (study.researcher) {
+            details.push(`By ${study.researcher}`);
+        }
+        if (details.length > 0) {
+            message = details.map((detail) => `• ${detail}`).join("\n");
         }
     }
     chrome.notifications.create(id, {
@@ -285,6 +302,69 @@ function sendNotification(study = null) {
         message: message,
         buttons: [{ title: 'Open Study' }, { title: 'Dismiss' }],
     });
+    // Fire-and-forget: forwarding must never block or break the browser notification above.
+    if (study) {
+        void forwardNotificationToNtfy(study, message);
+    }
+}
+// Sends the same study details shown in the browser notification to the user's ntfy topic.
+function forwardNotificationToNtfy(study, message) {
+    const clickUrl = study.id ? `https://app.prolific.com/studies/${study.id}` : null;
+    return sendNtfyMessage(study.title ? study.title : NTFY_DEFAULT_TITLE, message, clickUrl);
+}
+// Posts one message to the configured ntfy topic.
+// Only runs when forwarding is enabled and a valid topic is configured in the popup settings.
+function sendNtfyMessage(title, body, clickUrl = null) {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const ntfyValues = yield chrome.storage.sync.get([NTFY_ACTIVE, NTFY_TOPIC]);
+            if (ntfyValues[NTFY_ACTIVE] !== true) {
+                return;
+            }
+            const topic = typeof ntfyValues[NTFY_TOPIC] === "string" ? ntfyValues[NTFY_TOPIC].trim() : "";
+            if (!topic) {
+                return;
+            }
+            if (!NTFY_TOPIC_PATTERN.test(topic)) {
+                console.warn(`ntfy forwarding skipped: invalid topic "${topic}"`);
+                return;
+            }
+            const headers = { "Content-Type": "text/plain; charset=utf-8" };
+            const ntfyTitle = toHeaderValue(title);
+            if (ntfyTitle) {
+                headers["Title"] = ntfyTitle;
+            }
+            if (clickUrl) {
+                headers["Click"] = clickUrl;
+            }
+            const response = yield fetch(NTFY_BASE_URL + encodeURIComponent(topic), {
+                method: "POST",
+                headers: headers,
+                body: body,
+            });
+            if (!response.ok) {
+                console.warn(`ntfy forwarding failed: HTTP ${response.status}`);
+            }
+        }
+        catch (error) {
+            console.warn("ntfy forwarding failed:", error);
+        }
+    });
+}
+// HTTP header values cannot contain line breaks or non-Latin-1 characters.
+// Collapses whitespace and RFC 2047-encodes the value when needed (ntfy decodes this).
+function toHeaderValue(value) {
+    const cleaned = String(value).replace(/\s+/g, " ").trim();
+    if (!cleaned) {
+        return "";
+    }
+    if (/^[\x20-\x7E]*$/.test(cleaned)) {
+        return cleaned;
+    }
+    const bytes = new TextEncoder().encode(cleaned);
+    let binary = "";
+    bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+    return `=?UTF-8?B?${btoa(binary)}?=`;
 }
 function updateBadge(counter) {
     return __awaiter(this, void 0, void 0, function* () {

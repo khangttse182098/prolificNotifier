@@ -18,6 +18,7 @@ const REWARD_PER_HOUR = "rewardPerHour";
 const TIME = 'time';
 const NAME_BLACKLIST = "nameBlacklist";
 const RESEARCHER_BLACKLIST = "researcherBlacklist";
+const RESEARCHER_WHITELIST = "researcherWhitelist";
 function handleContentMessages(message) {
     if (message.target !== "content" && message.target !== 'everything') {
         return Promise.resolve();
@@ -128,6 +129,7 @@ function extractStudies(targetNode) {
             TIME,
             NAME_BLACKLIST,
             RESEARCHER_BLACKLIST,
+            RESEARCHER_WHITELIST,
         ]);
         const localValues = yield chrome.storage.local.get([
             "currentStudies",
@@ -147,6 +149,7 @@ function extractStudies(targetNode) {
         const time = (_f = storageValues[TIME]) !== null && _f !== void 0 ? _f : 0;
         const nameBlacklist = (_g = storageValues[NAME_BLACKLIST]) !== null && _g !== void 0 ? _g : [];
         const researcherBlacklist = (_h = storageValues[RESEARCHER_BLACKLIST]) !== null && _h !== void 0 ? _h : [];
+        const researcherWhitelist = Array.isArray(storageValues[RESEARCHER_WHITELIST]) ? storageValues[RESEARCHER_WHITELIST] : [];
         const studyIds = savedStudies.map((study) => study.id);
         function shouldIncludeStudy(study) {
             if (reward && study.reward && getFloatValueFromMoneyStringContent(study.reward) < reward)
@@ -157,10 +160,16 @@ function extractStudies(targetNode) {
                 return false;
             if (researcherBlacklist.some((researcher) => { var _a; return (_a = study.researcher) === null || _a === void 0 ? void 0 : _a.toLowerCase().includes(researcher); }))
                 return false;
+            // Allowlist: when it has entries, only studies from a matching researcher are kept.
+            if (researcherWhitelist.length > 0) {
+                const researcherName = study.researcher ? study.researcher.toLowerCase() : "";
+                if (!researcherWhitelist.some((researcher) => researcherName.includes(String(researcher).toLowerCase())))
+                    return false;
+            }
             return !(rewardPerHour && study.rewardPerHour && getFloatValueFromMoneyStringContent(study.rewardPerHour) < rewardPerHour);
         }
         function shouldFilterStudies() {
-            return reward > 0 || rewardPerHour > 0 || time > 0 || nameBlacklist.length > 0 || researcherBlacklist.length > 0;
+            return reward > 0 || rewardPerHour > 0 || time > 0 || nameBlacklist.length > 0 || researcherBlacklist.length > 0 || researcherWhitelist.length > 0;
         }
         studyElements.forEach((study) => {
             var _a, _b, _c;
@@ -215,15 +224,13 @@ function parseTimeContent(value) {
     const minutes = minMatch ? parseInt(minMatch[1], 10) : 0;
     return hours * 60 + minutes;
 }
+// Returns the amount in US dollars. The "at least" filters are entered in dollars;
+// rewards in any other currency (e.g. £) are not converted and count as 0, so they
+// are skipped whenever a minimum is set.
 function getFloatValueFromMoneyStringContent(value) {
     const firstWord = value.split(" ")[0];
-    if (firstWord.charAt(0) === '£') {
+    if (firstWord.charAt(0) === '$') {
         return parseFloat(firstWord.slice(1));
     }
-    else if (firstWord.charAt(0) === '$') {
-        return parseFloat(firstWord.slice(1)) * 0.8;
-    }
-    else {
-        return 0;
-    }
+    return 0;
 }

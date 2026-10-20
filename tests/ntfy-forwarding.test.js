@@ -163,23 +163,21 @@ test("1+2: one new study -> one browser notification and one matching ntfy POST"
     const notif = bg.calls.notifications[0];
     const req = bg.fetchCalls[0];
 
-    // Original notification content is unchanged.
+    // Browser notification: study title + bulleted details.
     assert.strictEqual(notif.id, STUDY.id);
-    assert.strictEqual(notif.opts.title, `${STUDY.title}\nBy ${STUDY.researcher}`);
+    assert.strictEqual(notif.opts.title, STUDY.title);
     assert.strictEqual(
         notif.opts.message,
-        "A new study is available on Prolific!\nReward: $10.00\nReward per hour: $20.00\nTime: 30 mins"
+        "• Reward: $10.00\n• Reward per hour: $20.00\n• Time: 30 mins\n• By Example Lab"
     );
+    assert.ok(!notif.opts.message.includes("A new study is available"));
 
-    // ntfy request mirrors it.
+    // ntfy request mirrors it exactly.
     assert.strictEqual(req.url, "https://ntfy.sh/prolific-test-topic");
     assert.strictEqual(req.init.method, "POST");
     assert.strictEqual(req.init.headers.Title, STUDY.title);
     assert.strictEqual(req.init.headers.Click, `https://app.prolific.com/studies/${STUDY.id}`);
-    assert.ok(req.init.body.startsWith(notif.opts.message), "ntfy body starts with the original message");
-    assert.ok(req.init.body.includes("Reward: $10.00"));
-    assert.ok(req.init.body.includes("Reward per hour: $20.00"));
-    assert.ok(req.init.body.endsWith(`By ${STUDY.researcher}`));
+    assert.strictEqual(req.init.body, notif.opts.message, "ntfy body equals the browser notification body");
 });
 
 test("2b: missing fields are omitted rather than faked", async () => {
@@ -191,10 +189,21 @@ test("2b: missing fields are omitted rather than faked", async () => {
     assert.strictEqual(bg.calls.notifications.length, 1);
     assert.strictEqual(bg.fetchCalls.length, 1);
     const req = bg.fetchCalls[0];
-    assert.strictEqual(req.init.headers.Title, "Prolific Automatic Studies", "falls back to the same default title as the browser notification");
-    assert.strictEqual(req.init.body, "A new study is available on Prolific!");
+    assert.strictEqual(req.init.headers.Title, "Prolific", "falls back to the ntfy default title");
+    assert.strictEqual(req.init.body, "A new study is available on Prolific!", "generic text only when no details exist");
     assert.ok(!req.init.body.includes("Reward"));
     assert.ok(!req.init.body.includes("By "));
+    assert.strictEqual(bg.calls.notifications[0].opts.title, "Prolific Automatic Studies");
+});
+
+test("2d: a study with only some fields lists just those bullets", async () => {
+    const bg = loadBackground({ fetchImpl: okFetch, sync: BASE_SYNC });
+    const study = { id: "some", title: "Short survey", researcher: null, reward: "£2.50", rewardPerHour: null, time: "10 mins" };
+    await bg.dispatch({ target: "background", type: "new-studies", data: [study] });
+    await flush();
+    assert.strictEqual(bg.calls.notifications[0].opts.title, "Short survey");
+    assert.strictEqual(bg.calls.notifications[0].opts.message, "• Reward: £2.50\n• Time: 10 mins");
+    assert.strictEqual(bg.fetchCalls[0].init.body, "• Reward: £2.50\n• Time: 10 mins");
 });
 
 test("2c: non-ASCII titles are RFC 2047 encoded for the header", async () => {
@@ -229,6 +238,48 @@ test("3: duplicate detection in content.js prevents a second new-studies message
     await flush();
     assert.strictEqual(bg.calls.notifications.length, 1);
     assert.strictEqual(bg.fetchCalls.length, 1);
+});
+
+test("7: researcher allowlist in content.js keeps only matching researchers", async () => {
+    const other = Object.assign({}, STUDY, { id: "other1", researcher: "Someone Else" });
+    const noResearcher = Object.assign({}, STUDY, { id: "anon1", researcher: "" });
+    const run = async (whitelist) => {
+        const ct = loadContent({
+            sync: { trackIds: true, studyHistoryLen: 100, researcherWhitelist: whitelist },
+            local: { currentStudies: [] },
+        });
+        const targetNode = { querySelectorAll: () => [fakeStudyNode(STUDY), fakeStudyNode(other), fakeStudyNode(noResearcher)] };
+        await ct.sandbox.extractAndSendStudies(targetNode);
+        const msgs = ct.calls.sendMessage.filter((m) => m.type === "new-studies");
+        return msgs.length ? msgs[0].data.map((s) => s.id) : [];
+    };
+
+    assert.deepStrictEqual(await run(["example lab"]), [STUDY.id], "only the allowed researcher passes");
+    assert.deepStrictEqual(await run(["EXAMPLE"]), [STUDY.id], "case-insensitive substring match");
+    assert.deepStrictEqual(await run(["nobody"]), [], "no match -> nothing notified");
+    assert.deepStrictEqual(await run([]), [STUDY.id, "other1", "anon1"], "empty allowlist -> everyone allowed");
+    assert.deepStrictEqual(await run(undefined), [STUDY.id, "other1", "anon1"], "missing setting -> everyone allowed");
+});
+
+test("8: minimum reward filters are in dollars; pound rewards are skipped when a minimum is set", async () => {
+    const usd8 = Object.assign({}, STUDY, { id: "usd8", reward: "$8.00", rewardPerHour: "$16.00" });
+    const usd12 = Object.assign({}, STUDY, { id: "usd12", reward: "$12.00", rewardPerHour: "$24.00" });
+    const gbp9 = Object.assign({}, STUDY, { id: "gbp9", reward: "£9.00", rewardPerHour: "£18.00" });
+    const run = async (filters) => {
+        const ct = loadContent({
+            sync: Object.assign({ trackIds: true, studyHistoryLen: 100 }, filters),
+            local: { currentStudies: [] },
+        });
+        const targetNode = { querySelectorAll: () => [fakeStudyNode(usd8), fakeStudyNode(usd12), fakeStudyNode(gbp9)] };
+        await ct.sandbox.extractAndSendStudies(targetNode);
+        const msgs = ct.calls.sendMessage.filter((m) => m.type === "new-studies");
+        return msgs.length ? msgs[0].data.map((s) => s.id) : [];
+    };
+
+    assert.deepStrictEqual(await run({ reward: 10 }), ["usd12"], "$10 minimum keeps $12, drops $8 and skips £9");
+    assert.deepStrictEqual(await run({ reward: 1 }), ["usd8", "usd12"], "any minimum skips pound rewards");
+    assert.deepStrictEqual(await run({ rewardPerHour: 20 }), ["usd12"], "$20/h minimum keeps $24/h, skips £18/h");
+    assert.deepStrictEqual(await run({}), ["usd8", "usd12", "gbp9"], "no minimum -> everything, including pounds");
 });
 
 test("4: ntfy network failure does not affect the browser notification", async () => {
@@ -288,20 +339,39 @@ test("5: disabled forwarding / empty topic / invalid topic send nothing, notific
         await flush();
         assert.strictEqual(bg.fetchCalls.length, 0, `no ntfy request for ${JSON.stringify(v)}`);
         assert.strictEqual(bg.calls.notifications.length, 1);
-        assert.strictEqual(bg.calls.notifications[0].opts.title, `${STUDY.title}\nBy ${STUDY.researcher}`);
+        assert.strictEqual(bg.calls.notifications[0].opts.title, STUDY.title);
         assert.strictEqual(
             bg.calls.notifications[0].opts.message,
-            "A new study is available on Prolific!\nReward: $10.00\nReward per hour: $20.00\nTime: 30 mins"
+            "• Reward: $10.00\n• Reward per hour: $20.00\n• Time: 30 mins\n• By Example Lab"
         );
     }
 });
 
-test("5b: generic notifications without study data (test button / title mode) are not forwarded", async () => {
+test("5b: a bare sendNotification() without study data (title mode) is not forwarded", async () => {
     const bg = loadBackground({ fetchImpl: okFetch, sync: BASE_SYNC });
     bg.sandbox.sendNotification();
     await flush();
     assert.strictEqual(bg.calls.notifications.length, 1);
     assert.strictEqual(bg.fetchCalls.length, 0);
+});
+
+test("6: popup Test button (play-sound) sends one test ntfy message when enabled, none when disabled", async () => {
+    const enabled = loadBackground({ fetchImpl: okFetch, sync: BASE_SYNC });
+    await enabled.dispatch({ target: "background", type: "play-sound" });
+    await flush();
+    assert.strictEqual(enabled.calls.notifications.length, 1, "browser test notification still shown");
+    assert.strictEqual(enabled.fetchCalls.length, 1, "one ntfy test message");
+    const req = enabled.fetchCalls[0];
+    assert.strictEqual(req.url, "https://ntfy.sh/prolific-test-topic");
+    assert.strictEqual(req.init.headers.Title, "Prolific");
+    assert.strictEqual(req.init.headers.Click, "https://app.prolific.com/");
+    assert.ok(req.init.body.includes("Test notification"));
+
+    const disabled = loadBackground({ fetchImpl: okFetch, sync: Object.assign({}, BASE_SYNC, { ntfyActive: false }) });
+    await disabled.dispatch({ target: "background", type: "play-sound" });
+    await flush();
+    assert.strictEqual(disabled.calls.notifications.length, 1);
+    assert.strictEqual(disabled.fetchCalls.length, 0);
 });
 
 test("5c: 'show notification' off -> neither browser notification nor ntfy request", async () => {

@@ -411,6 +411,22 @@ function setInputState(elementId, storageKey) {
         });
     });
 }
+function setTextInputState(elementId, storageKey) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const element = document.getElementById(elementId);
+        if (!element)
+            return;
+        const result = yield chrome.storage.sync.get(storageKey);
+        if (result[storageKey] !== undefined) {
+            element.value = result[storageKey];
+        }
+        element.addEventListener("change", function () {
+            return __awaiter(this, void 0, void 0, function* () {
+                yield chrome.storage.sync.set({ [storageKey]: element.value.trim() });
+            });
+        });
+    });
+}
 function handleBlacklistInputs() {
     return __awaiter(this, void 0, void 0, function* () {
         yield handleBlacklistInput("blacklist-name", "nameBlacklist", "name-list");
@@ -430,6 +446,22 @@ function setBlacklist() {
         const blacklistButton = document.getElementById("submit-blacklist");
         const blacklistNameInput = document.getElementById("blacklist-name");
         const blacklistResearcherInput = document.getElementById("blacklist-researcher");
+        const whitelistButton = document.getElementById("submit-whitelist");
+        const whitelistResearcherInput = document.getElementById("whitelist-researcher");
+        if (whitelistResearcherInput) {
+            whitelistResearcherInput.addEventListener("keydown", (e) => __awaiter(this, void 0, void 0, function* () {
+                if (e.key === "Enter") {
+                    yield handleBlacklistInput("whitelist-researcher", "researcherWhitelist", "researcher-whitelist");
+                }
+            }));
+        }
+        if (whitelistButton) {
+            whitelistButton.addEventListener("click", function () {
+                return __awaiter(this, void 0, void 0, function* () {
+                    yield handleBlacklistInput("whitelist-researcher", "researcherWhitelist", "researcher-whitelist");
+                });
+            });
+        }
         blacklistNameInput.addEventListener("keydown", (e) => __awaiter(this, void 0, void 0, function* () {
             if (e.key === "Enter") {
                 yield handleBlacklistInput("blacklist-name", "nameBlacklist", "name-list");
@@ -470,6 +502,7 @@ function populateBlacklists() {
     return __awaiter(this, void 0, void 0, function* () {
         yield populateBlacklist("name-list", "nameBlacklist");
         yield populateBlacklist("researcher-list", "researcherBlacklist");
+        yield populateBlacklist("researcher-whitelist", "researcherWhitelist");
     });
 }
 function populateBlacklist(listId_1, storageKey_1) {
@@ -510,6 +543,8 @@ function renderPopup() {
         yield setCheckboxState("openProlific", "openProlific");
         yield setCheckboxState("focusProlific", "focusProlific");
         yield setCheckboxState("trackIds", "trackIds");
+        yield setCheckboxState("ntfyActive", "ntfyActive");
+        yield setTextInputState("ntfyTopic", "ntfyTopic");
         yield setInputState("reward", "reward");
         yield setInputState("rewardPerHour", "rewardPerHour");
         yield setInputState("time", "time");
